@@ -1,0 +1,174 @@
+parameters:
+  - name: source_build_id
+    type: string
+    default: ''
+    displayName: Source RC1 build name to use (like 0.6.340-16384)
+  - name: target_release_version
+    type: string
+    default: ''
+    displayName: Release version (like 1.0.3, build number will be added automatically)
+  - name: include_Applications_bundle
+    type: boolean
+    default: false
+    displayName: Applications (bundle)
+  - name: include_Cause_and_Effect
+    type: boolean
+    default: false
+    displayName: Cause and Effect
+  - name: include_GasLinearAGA7
+    type: boolean
+    default: false
+    displayName: GasOroficeAGA7
+  - name: include_GasOrificeAGA3
+    type: boolean
+    default: false
+    displayName: GasOrificeAGA3
+  - name: include_Liquid_API
+    type: boolean
+    default: false
+    displayName: Liquid_API
+  - name: include_PID_Control
+    type: boolean
+    default: false
+    displayName: PID_Control
+  - name: include_Pulse_Accumulator
+    type: boolean
+    default: false
+    displayName: Pulse Accumulator
+
+  - name: include_Interfaces_bundle
+    type: boolean
+    default: false
+    displayName: Interfaces (bundle)
+  - name: include_GC_Int
+    type: boolean
+    default: false
+    displayName: GC Int
+  - name: include_Coriolis_Int
+    type: boolean
+    default: false
+    displayName: Coriolis Int
+  - name: include_MB_Client
+    type: boolean
+    default: false
+    displayName: MB Client
+  - name: include_MB_Server
+    type: boolean
+    default: false
+    displayName: MB Server
+  - name: include_MV_Interface
+    type: boolean
+    default: false
+    displayName: MV Interface
+  - name: include_TFIO_BUS
+    type: boolean
+    default: false
+    displayName: TFO BUS
+  - name: include_XIO_Client
+    type: boolean
+    default: false
+    displayName: XIO Client
+  - name: include_XIO_Server
+    type: boolean
+    default: false
+    displayName: XIO Server
+
+  - name: include_OS
+    type: boolean
+    default: false
+    displayName: OS
+  - name: include_RecoveryOS
+    type: boolean
+    default: false
+    displayName: Recovery OS
+  - name: include_kernel_and_rootfs
+    type: boolean
+    default: false
+    displayName: standalone kernel and rootfs packages
+  - name: include_Platform
+    type: boolean
+    default: false
+    displayName: Platform
+  - name: dry_run
+    type: boolean
+    default: false
+    displayName: Dry run (no artifacts are uploaded)
+
+trigger:
+- none
+
+pool:
+  name: BVL_POOL
+
+stages: 
+- stage: Rebuild_package
+  jobs:
+    - job: generate_release_package
+      steps:
+        - checkout: self
+        - script: pwd
+          condition: eq('${{ parameters.dry_run }}', False)
+
+        - task: UniversalPackages@0
+          inputs:
+            command: 'download'
+            downloadDirectory: '$(System.DefaultWorkingDirectory)/'
+            feedsToUse: 'internal'
+            vstsFeed: '814d2323-fa38-46db-9485-ab17cc0911d5/501a78b4-7937-4381-9e0c-5b172cb69fc2'
+            vstsFeedPackage: '878da523-69db-402a-95e3-b6459252fc79'
+            vstsPackageVersion: ${{ parameters.source_build_id }}
+          continueOnError: False
+          displayName: download_source_package
+
+        - script: |
+            bn=$(echo ${{ parameters.source_build_id }} | cut -d - -f 2 )
+            bn=101
+            echo "##vso[task.setvariable variable=ImageVersion;]${{ parameters.target_release_version }}-$bn"
+            echo "##vso[task.setvariable variable=BuildNumberToAppend;]$bn"
+
+            echo "##vso[build.updatebuildnumber]${{ parameters.target_release_version }}-$bn"
+          continueOnError: False
+          displayName: set_versions
+
+        - script: ./rebuild_package.sh
+          env:
+            target_release_version: ${{ parameters.target_release_version }}-$(BuildNumberToAppend)
+            include_Applications_bundle: ${{ parameters.include_Applications_bundle }}
+            include_Cause_and_Effect: ${{ parameters.include_Cause_and_Effect }}
+            include_GasLinearAGA7: ${{ parameters.include_GasLinearAGA7 }}
+            include_GasOrificeAGA3: ${{ parameters.include_GasOrificeAGA3 }}
+            include_Liquid_API: ${{ parameters.include_Liquid_API }}
+            include_PID_Control: ${{ parameters.include_PID_Control }}
+            include_Pulse_accumulator: ${{ parameters.include_Pulse_accumulator }}
+
+            include_Interfaces_bundle: ${{ parameters.include_Interfaces_bundle }}
+            include_GC_Int: ${{ parameters.include_GC_Int }}
+            include_Coriolis_Int: ${{ parameters.include_Coriolis_Int }}
+            include_MB_Client: ${{ parameters.include_MB_Client }}
+            include_MB_Server: ${{ parameters.include_MB_Server }}
+            include_MV_Interface: ${{ parameters.include_MV_Interface }}
+            include_TFIO_BUS: ${{ parameters.include_TFIO_BUS }}
+            include_XIO_Client: ${{ parameters.include_XIO_Client }}
+            include_XIO_Server: ${{ parameters.include_XIO_Server }}
+
+            include_OS: ${{ parameters.include_OS }}
+            include_RecoveryOS: ${{ parameters.include_RecoveryOS }}
+            include_kernel_and_rootfs: ${{ parameters.include_kernel_and_rootfs }}
+
+            include_Platform: ${{ parameters.include_Platform }}
+          continueOnError: False
+          failOnStderr: True
+          displayName: build_release_package
+
+        - task: UniversalPackages@0
+          inputs:
+            command: 'publish'
+            publishDirectory: '$(System.DefaultWorkingDirectory)/upload_package'
+            feedsToUsePublish: 'internal'
+            vstsFeedPublish: '814d2323-fa38-46db-9485-ab17cc0911d5/f6ee5f3b-ceee-41be-8253-8cc9e9ed5f3f'
+            vstsFeedPackagePublish: 'tmp_release_package_rc1'
+            versionOption: 'custom'
+            versionPublish: '$(ImageVersion)'
+          continueOnError: False
+          displayName: store_package_artifact
+          condition: eq('${{ parameters.dry_run }}', False)
